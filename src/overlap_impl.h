@@ -3,6 +3,8 @@
 #include <nccl.h>
 #include <vector>
 #include <cublas_v2.h>
+#include <cstddef>
+#include <string>
 
 #include <ATen/ATen.h>
 #include <ATen/cuda/CUDAContext.h>
@@ -22,6 +24,7 @@ class OverlapImpl : public torch::CustomClassHolder {
             const int64_t tp_size,
             const std::vector<int64_t> devices,
             const std::string broker_key);
+        void OoverlapRelease();
         void OverlapInit();
 
         void Gemm(at::Tensor A, at::Tensor B, at::Tensor C, int64_t Algo);

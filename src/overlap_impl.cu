@@ -133,9 +133,9 @@ void OverlapImpl::OoverlapIpcInit(
 }
 
 void OverlapImpl::OoverlapUnregisterBuffer() {
-    if (this->oo_group != nullptr && this->oo_group->broker) {
+    if (this->oo_group != nullptr) {
         try {
-            this->oo_group->broker->sync();
+            oo_group_sync(this->oo_group);
         } catch (...) {
         }
     }
@@ -145,9 +145,9 @@ void OverlapImpl::OoverlapUnregisterBuffer() {
         this->oo_peer_buf = nullptr;
     }
 
-    if (this->oo_group != nullptr && this->oo_group->broker) {
+    if (this->oo_group != nullptr) {
         try {
-            this->oo_group->broker->sync();
+            oo_group_sync(this->oo_group);
         } catch (...) {
         }
     }
@@ -157,9 +157,9 @@ void OverlapImpl::OoverlapUnregisterBuffer() {
         this->oo_local_buf = nullptr;
     }
 
-    if (this->oo_group != nullptr && this->oo_group->broker) {
+    if (this->oo_group != nullptr) {
         try {
-            this->oo_group->broker->sync();
+            oo_group_sync(this->oo_group);
         } catch (...) {
         }
     }
@@ -229,36 +229,12 @@ void OverlapImpl::OoverlapEnsureBuffer(at::Tensor C) {
             &this->oo_local_buf),
         "oo_buffer_wrap(C)");
 
-    ooverlap::system::legacy_peer_buffer_descriptor local_desc{};
-
     OO_CHECK_OR_THROW(
-        oo_buffer_export_legacy_descriptor(
-            this->oo_local_buf,
-            &local_desc),
-        "oo_buffer_export_legacy_descriptor(C)");
-
-    std::vector<ooverlap::system::legacy_peer_buffer_descriptor> all_desc(
-        static_cast<size_t>(this->oo_size));
-
-    this->oo_group->broker->exchange_data(
-        all_desc.data(),
-        &local_desc,
-        sizeof(local_desc));
-
-    const int peer_rank = static_cast<int>(this->oo_rank ^ 1);
-
-    TORCH_CHECK(
-        all_desc[peer_rank].bytes >= bytes,
-        "peer C buffer is smaller than local C buffer");
-
-    OO_CHECK_OR_THROW(
-        oo_buffer_import_legacy_descriptor(
+        oo_buffer_exchange_ipc_peer(
             this->oo_node,
-            all_desc[peer_rank],
+            this->oo_local_buf,
             &this->oo_peer_buf),
-        "oo_buffer_import_legacy_descriptor(peer C)");
-
-    this->oo_group->broker->sync();
+        "oo_buffer_exchange_ipc_peer(C)"); 
 
     this->oo_registered_ptr = c_ptr;
     this->oo_registered_bytes = bytes;
@@ -283,29 +259,17 @@ void OverlapImpl::OoverlapAllReduceSlice(
         byte_offset + bytes <= this->oo_registered_bytes,
         "ooverlap allreduce slice is out of registered C buffer bounds");
 
-    oo_buffer local_view = *this->oo_local_buf;
-    oo_buffer peer_view = *this->oo_peer_buf;
-
-    local_view.ptr = reinterpret_cast<void*>(
-        reinterpret_cast<std::uint8_t*>(this->oo_local_buf->ptr) + byte_offset);
-    local_view.bytes = bytes;
-    local_view.mapped_bytes = bytes;
-
-    peer_view.ptr = reinterpret_cast<void*>(
-        reinterpret_cast<std::uint8_t*>(this->oo_peer_buf->ptr) + byte_offset);
-    peer_view.bytes = bytes;
-    peer_view.mapped_bytes = bytes;
-
     OO_CHECK_OR_THROW(
-        oo_allreduce(
+        oo_allreduce_offset(
             this->oo_node,
-            &local_view,
-            &peer_view,
+            this->oo_local_buf,
+            this->oo_peer_buf,
+            element_offset,
             count,
             OO_DTYPE_FLOAT16,
             OO_REDUCE_SUM,
             stream),
-        "oo_allreduce(slice)");
+        "oo_allreduce_offset(slice)");
 }
 
 
