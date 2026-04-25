@@ -101,5 +101,15 @@ endif()
 # Let all executable targets go to bin
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
+# Add ooverlap
+set(OOVERLAP_BUILD_CORE ON CACHE BOOL "Build ooverlap communication core" FORCE)
+set(OOVERLAP_BUILD_PYTHON OFF CACHE BOOL "Do not build ooverlap Python extension inside FlashOverlap" FORCE)
+set(OOVERLAP_BUILD_TESTS OFF CACHE BOOL "Do not build ooverlap tests inside FlashOverlap" FORCE)
+set(OOVERLAP_BUILD_GEMM OFF CACHE BOOL "Do not build ooverlap GEMM helpers inside FlashOverlap" FORCE)
+set(OOVERLAP_BUILD_LEGACY_OVERLAP OFF CACHE BOOL "Do not build ooverlap legacy overlap code inside FlashOverlap" FORCE)
+set(OOVERLAP_BUILD_RMSNORM OFF CACHE BOOL "Do not build ooverlap RMSNorm helpers inside FlashOverlap" FORCE)
+
+add_subdirectory(src/3rdparty/ooverlap)
+
 # Add subdirectories
 add_subdirectory(src)

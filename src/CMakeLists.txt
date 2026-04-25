@@ -20,7 +20,12 @@ target_link_libraries (baseline_impl PUBLIC gemm overlap norm)
 
 add_library(overlap_impl overlap_impl.cu)
 set_property(TARGET overlap_impl PROPERTY POSITION_INDEPENDENT_CODE ON)
-target_link_libraries (overlap_impl PUBLIC gemm overlap norm)
+target_link_libraries(overlap_impl PUBLIC
+    gemm
+    overlap
+    norm
+    ooverlap::comm
+)
 
 add_library(nccl_tool nccl_utils.cu)
 set_property(TARGET nccl_tool PROPERTY POSITION_INDEPENDENT_CODE ON)
