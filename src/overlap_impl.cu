@@ -488,7 +488,11 @@ void OverlapImpl::GemmAllReduceOverlap(
 
     int* cseg_cpu_ptr = cSEG_CPU.data_ptr<int>();
     int* cseg_gpu_ptr = cSEG_GPU.data_ptr<int>();
-    this->OoverlapEnsureBuffer(C);
+
+    const bool use_ooverlap = this->oo_initialized;
+    if (use_ooverlap) {
+        this->OoverlapEnsureBuffer(C);
+    }
 
     int acc_addr = 0;
     signal_func_table[Algo](
@@ -500,11 +504,21 @@ void OverlapImpl::GemmAllReduceOverlap(
         // The signal is reset by the wait kernel
         kernel_wait_flag<<<1, 1, 0, this->comm_stream>>> (this_seg, (mm_ptr + iter));
         // Communicate the data
-        //NCCL_CHECK(ncclAllReduce((void *)(c_ptr + acc_addr), (void *)(c_ptr + acc_addr), commSize, ncclFloat16, ncclSum, this->comm, this->comm_stream));
-        this->OoverlapAllReduceSlice(
-            static_cast<size_t>(acc_addr),
-            static_cast<size_t>(commSize),
-            this->comm_stream);
+        if (use_ooverlap) {
+            this->OoverlapAllReduceSlice(
+                static_cast<size_t>(acc_addr),
+                static_cast<size_t>(commSize),
+                this->comm_stream);
+        } else {
+            NCCL_CHECK(ncclAllReduce(
+                (void *)(c_ptr + acc_addr),
+                (void *)(c_ptr + acc_addr),
+                commSize,
+                ncclFloat16,
+                ncclSum,
+                this->comm,
+                this->comm_stream));
+        }
         acc_addr += commSize;
     }
 

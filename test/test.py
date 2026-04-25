@@ -5,6 +5,7 @@
 '''
 
 import torch
+import time
 import json
 from pathlib import Path
 import torch.multiprocessing as mp
@@ -68,7 +69,7 @@ def generate_row_remap_array(
     
     return remap
 
-def perf_running_process(rank, world_size, nccl_id,
+def perf_running_process(rank, world_size, nccl_id, broker_key, comm_backend,
     M: int, N: int, K: int,
     BM: int, BN: int, Algo: int, cSeg: list, hint: list, 
     comm_op: str,
@@ -83,7 +84,18 @@ def perf_running_process(rank, world_size, nccl_id,
 
     gemm_class = torch.classes.flashoverlap_class.OverlapImpl()
 
+    # Keep NCCL initialized for normal paths and for fallback.
     gemm_class.nccl_init(rank, world_size, nccl_id)
+    
+    if comm_backend == "ooverlap":
+        if comm_op != "all_reduce":
+            raise RuntimeError("ooverlap backend is only wired for all_reduce right now")
+        if world_size != 2:
+            raise RuntimeError("ooverlap IPC path currently supports exactly 2 local ranks")
+    
+        devices = list(range(world_size))
+        gemm_class.ooverlap_ipc_init(rank, world_size, devices, broker_key)
+    
     gemm_class.cutlass_init()
     gemm_class.overlap_init()
 
@@ -165,12 +177,14 @@ def perf_running_process(rank, world_size, nccl_id,
     
 def perf_running(M: int, N: int, K: int, 
     BM: int, BN: int, Algo: int, 
-    cSeg: list, hint: list, comm_op: str):
+    cSeg: list, hint: list, comm_op: str,
+    comm_backend: str = "nccl"):
     world_size = torch.cuda.device_count()
     if world_size < 2:
         raise RuntimeError("At least 2 GPUs are required for this program.")
 
     nccl_id = torch.ops.flashoverlap_op.generate_nccl_id()
+    broker_key = f"flashoverlap_oo_{os.getpid()}_{int(time.time() * 1000000)}"
     torch.cuda.synchronize()
     # print(f"NCCL ID generated: {nccl_id[0]}")
 
@@ -179,7 +193,7 @@ def perf_running(M: int, N: int, K: int,
 
     mp.spawn(
             perf_running_process,
-            args=(world_size, nccl_id, M, N, K, BM, BN, Algo, cSeg, hint, comm_op, result_dict),
+            args=(world_size, nccl_id, broker_key, comm_backend, M, N, K, BM, BN, Algo, cSeg, hint, comm_op, result_dict),
             nprocs=world_size
         )
 
@@ -334,9 +348,17 @@ def main():
     parser.add_argument('--k', type=int, default=8192)
     parser.add_argument('--n', type=int, default=8192)
     parser.add_argument('--comm_op', type=str, default='all_reduce')
+    parser.add_argument(
+        "--comm_backend",
+        type=str,
+        default="nccl",
+        choices=["nccl", "ooverlap"],
+    )
     args = parser.parse_args()
 
     comm_op = args.comm_op
+    comm_backend = args.comm_backend
+    print(f"comm_backend: {comm_backend}")
 
     m, n, k = args.m, args.n, args.k
 
@@ -351,7 +373,7 @@ def main():
     gemm_dur = data["dur"]
     comm_dur = perf_comm(m, n, comm_op)
     overlap_dur = perf_running(m, n, k, 
-        data["BM"], data["BN"], data["Algo"], data["cSeg"], data["hint"], comm_op)
+        data["BM"], data["BN"], data["Algo"], data["cSeg"], data["hint"], comm_op, comm_backend)
     baseline_dur = perf_baseline(m, n, k, comm_op)
 
     speedup = baseline_dur / overlap_dur
