@@ -8,6 +8,21 @@
 #include <torch/serialize/tensor.h>
 
 template<typename T>
+void OoverlapIpcInitWrapper(
+        const c10::intrusive_ptr<T>& self,
+        const int64_t tp_rank,
+        const int64_t tp_size,
+        const std::vector<int64_t> devices,
+        const std::string broker_key) {
+    self->OoverlapIpcInit(tp_rank, tp_size, devices, broker_key);
+}
+
+template<typename T>
+void OoverlapReleaseWrapper(const c10::intrusive_ptr<T>& self) {
+    self->OoverlapRelease();
+}
+
+template<typename T>
 void NcclInitWrapper(const c10::intrusive_ptr<T>& self, 
     const int64_t tp_rank, const int64_t tp_size, const std::vector<int64_t> tp_id){
     self->NcclInit(tp_rank, tp_size, tp_id);
@@ -141,6 +156,8 @@ TORCH_LIBRARY(flashoverlap_class, m) {
         .def("nccl_reducescatter", &NcclReduceScatterWrapper<OverlapImpl>)
         .def("nccl_all2all", &NcclAll2AllWrapper<OverlapImpl>)
         .def("seg_allreduce", &SegAllReduceWrapper<OverlapImpl>)
+        .def("ooverlap_ipc_init", &OoverlapIpcInitWrapper<OverlapImpl>)
+        .def("ooverlap_release", &OoverlapReleaseWrapper<OverlapImpl>)
     ;
 }
 

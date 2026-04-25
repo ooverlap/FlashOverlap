@@ -8,6 +8,7 @@
 #include <ATen/cuda/CUDAContext.h>
 
 #include "cutlass/util/device_memory.h"
+#include "ooverlap/comm.h"
 
 class OverlapImpl : public torch::CustomClassHolder {
     public:
@@ -16,6 +17,11 @@ class OverlapImpl : public torch::CustomClassHolder {
 
         void CutlassInit();
         void NcclInit(const int64_t tp_rank, const int64_t tp_size, const std::vector<int64_t> tp_id);
+        void OoverlapIpcInit(
+            const int64_t tp_rank,
+            const int64_t tp_size,
+            const std::vector<int64_t> devices,
+            const std::string broker_key);
         void OverlapInit();
 
         void Gemm(at::Tensor A, at::Tensor B, at::Tensor C, int64_t Algo);
@@ -33,6 +39,23 @@ class OverlapImpl : public torch::CustomClassHolder {
         void NcclAll2All(at::Tensor C, at::Tensor D, at::Tensor mLen_CPU);
 
     private:
+        void OoverlapUnregisterBuffer();
+        void OoverlapEnsureBuffer(at::Tensor C);
+        void OoverlapAllReduceSlice(size_t element_offset, size_t count, cudaStream_t stream);
+    
+        oo_group_t* oo_group = nullptr;
+        oo_node_t* oo_node = nullptr;
+        oo_buffer_t* oo_local_buf = nullptr;
+        oo_buffer_t* oo_peer_buf = nullptr;
+    
+        void* oo_registered_ptr = nullptr;
+        size_t oo_registered_bytes = 0;
+    
+        int64_t oo_rank = -1;
+        int64_t oo_size = 0;
+        int oo_devices[2] = {-1, -1};
+        bool oo_initialized = false;
+
         cudaStream_t gemm_stream;
         cudaStream_t comm_stream;
         cudaEvent_t gemm_finished;
